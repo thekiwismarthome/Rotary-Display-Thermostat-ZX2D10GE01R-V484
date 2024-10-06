@@ -1,0 +1,997 @@
+substitutions:
+  friendly_name: 'NESP'
+  hostname: 'neo-nesp'
+  device_name: 'neo_nesp'
+  board: 'esp32-s3-devkitc-1'
+  node_name: 'nesp'
+  device_description: 'Rotary Display thermostat on ZX2D10GE01R-V4848 with WT32-S3-WROVER-N16R8 with ST7701S display'
+  project_base: 'Veli'
+  project_name: 'Knob'
+  project_version: '0.2'
+
+  static_ip: 192.168.0.124
+
+  # Home Assistant entities you want to control with nESP
+  zone_1_entity: cover.zone_1_downstairs
+  zone_2_entity: cover.zone_2_upstairs
+
+  ## HA Entities
+  climate_entity: climate.ac_living_room
+  min_value: "15"
+  max_value: "35"
+  initial_value: "21"
+  light_entity_lounge: light.lounge_dimmer_2
+
+  # Add the ids of the devices you want to control here
+  # light_control: light.all_lights
+  light_control: light.lounge_dimmer_2
+
+  # for QR code generating
+  ap_ssid: ${device_name}
+  ap_password: ${device_name}
+  ap_guest_ssid: !secret ap_guest_ssid
+  ap_guest_password: !secret ap_guest_password
+
+<<: !include common.yaml
+
+external_components:
+  - source: github://pr#7472
+    components: [ lvgl ]
+  - source:
+      type: git
+      url: https://github.com/esphome/esphome
+      ref: dev
+    components: [ st7701s ]
+
+esphome:
+  name: ${hostname}
+  name_add_mac_suffix: true
+  friendly_name: ${friendly_name}
+  comment: ${device_description}
+  platformio_options:
+    board_build.flash_mode: dio
+    board_build.arduino.memory_type: qio_opi
+  on_boot:
+    - light.turn_on:
+        id: backlight
+        brightness: 0.7
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    version: 5.3.1
+    platform_version: 6.8.1
+    sdkconfig_options:
+      CONFIG_ESPTOOLPY_FLASHSIZE_16MB: y
+      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: y
+      CONFIG_ESP32S3_DATA_CACHE_64KB: y
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: y
+      CONFIG_SPIRAM_RODATA: y
+psram:
+  mode: octal
+  speed: 80MHz
+
+debug:
+  update_interval: 60s
+
+<<: !include common.yaml
+
+packages:
+  colors: !include nesp/colors/homeassistant
+
+font:
+  - file: 'gfonts://Roboto@400'
+    glyphs: ' 0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ°.:/+-%'
+    id: roboto_reg
+    size: 24
+    bpp: 4
+    extras:
+      - file: "nesp/fonts/materialdesignicons-webfont.ttf"
+        glyphs: [
+          "\U000F004D", # arrow-left
+          "\U000F050F", # thermometer
+          "\U000F058E", # water-percent
+          "\U000F0425", # power
+          "\U000F1A79", # sun-snowflake-variant
+          "\U000F0210", # fan
+          "\U000F1A45", # heat-wave
+          "\U000F0238", # fire
+          "\U000F0717", # snowflake
+          "\U000F032A", # leaf
+          "\U000F04B9", # sofa
+          "\U000F14DE", # rocket-launch
+          "\U000F0D80", # home-floor-1
+          "\U000F0D81", # home-floor-2
+          ]
+  - file: 'gfonts://Roboto@400'
+    glyphs: ' 0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ°.:/+-%'
+    id: roboto_med
+    size: 48
+    bpp: 4
+    extras:
+      - file: "nesp/fonts/materialdesignicons-webfont.ttf"
+        glyphs: [
+          "\U000F004D", # arrow-left
+          "\U000F050F", # thermometer
+          "\U000F058E", # water-percent
+          "\U000F0425", # power
+          "\U000F1A79", # sun-snowflake-variant
+          "\U000F0210", # fan
+          "\U000F1A45", # heat-wave
+          "\U000F0238", # fire
+          "\U000F0717", # snowflake
+          "\U000F032A", # leaf
+          "\U000F04B9", # sofa
+          "\U000F14DE", # rocket-launch
+          "\U000F0D80", # home-floor-1
+          "\U000F0D81", # home-floor-2
+          ]
+  - file: 'gfonts://Roboto@400'
+    glyphs: ' -0123456789.°C'
+    id: roboto_huge
+    size: 90
+    bpp: 4
+
+output:
+  ### DISPLAY BACKLIGHT
+  - platform: ledc
+    id: display_led
+    pin: 38
+    zero_means_zero: true
+
+light:
+  - platform: monochromatic
+    id: backlight
+    output: display_led
+    name: Backlight
+    icon: mdi:brightness-percent
+    default_transition_length: 500ms
+    restore_mode: ALWAYS_ON
+
+  ### RGB RING LIGHT
+  - platform: esp32_rmt_led_strip
+    name: RGB LED
+    id: rgb_ring
+    pin: 4
+    num_leds: 13
+    rmt_channel: 0
+    rgb_order: GRB
+    chipset: WS2812
+
+switch:
+  ### VIBRATION MOTOR
+  - platform: gpio
+    id: vibration
+    name: Vibration Motor
+    icon: mdi:vibrate
+    internal: true
+    pin: 7
+
+  ### DISPLAY ANTI BURN-IN
+  - platform: template
+    name: Antiburn
+    id: switch_antiburn
+    icon: mdi:television-shimmer
+    optimistic: true
+    internal: true
+    turn_on_action:
+      - logger.log: "Starting Antiburn"
+      - light.turn_off: backlight
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+            - delay: 1s
+      - lvgl.pause:
+          show_snow: true
+    turn_off_action:
+      - logger.log: "Stopping Antiburn"
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+            - delay: 1s
+            - lvgl.pause:
+      - light.turn_on: backlight
+
+time:
+  - platform: sntp
+    on_time:
+      - hours: 2, 3, 4, 5
+        minutes: 5
+        seconds: 0
+        then:
+          - switch.turn_on: switch_antiburn
+      - hours: 2, 3, 4, 5
+        minutes: 35
+        seconds: 0
+        then:
+          - switch.turn_off: switch_antiburn
+
+binary_sensor:
+  ### CENTRE PUSH BUTTON
+  - platform: gpio
+    name: Button
+    id: push_button
+    icon: mdi:circle-outline
+    internal: true
+    pin:
+      number: 3
+      mode: INPUT
+      inverted: true
+      ignore_strapping_warning: true
+    on_press: 
+      # - script.execute:
+      #     id: vibrate
+      #     length_ms: 10
+      - light.turn_on: backlight
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+      - if:
+          condition:
+            lambda: 'return strcmp(id(active_lvgl_page).c_str(), "main_page") == 0;'
+          then:
+            # only when on the main page
+            - lvgl.page.show:
+                id: menu_page
+                animation: FADE_IN
+                time: 500ms
+
+  - platform: status
+    name: Status
+
+button:
+- platform: restart
+  name: Restart
+  disabled_by_default: True
+
+sensor:
+  - platform: uptime
+    name: Uptime
+    disabled_by_default: True
+
+  ### ROTARY ENCODER
+  - platform: rotary_encoder
+    name: Rotary Encoder
+    id: rotary
+    icon: mdi:cached
+    internal: true
+    pin_a:
+      number: 6
+      inverted: true
+      mode: INPUT
+    pin_b:
+      number: 5
+      inverted: true
+      mode: INPUT
+    on_value:
+      - light.turn_on: backlight
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+    on_clockwise:
+      - if:
+          condition:
+            lambda: 'return strcmp(id(active_lvgl_page).c_str(), "main_page") == 0;'
+          then:
+            # only when on the main page
+            - homeassistant.action:
+                action: climate.set_temperature
+                data:
+                  entity_id: ${climate_entity}
+                  temperature: !lambda return id(set_temperature).state + 0.5;
+    on_anticlockwise:
+      - if:
+          condition:
+            lambda: 'return strcmp(id(active_lvgl_page).c_str(), "main_page") == 0;'
+          then:
+            # only on the main page
+            - homeassistant.action:
+                action: climate.set_temperature
+                data:
+                  entity_id: ${climate_entity}
+                  temperature: !lambda return id(set_temperature).state - 0.5;
+
+  ### HASS - SET TEMP
+  - platform: homeassistant
+    entity_id: ${climate_entity}
+    id: set_temperature
+    attribute: temperature
+    internal: true
+    on_value:
+      - lvgl.indicator.update:
+          id: set_temp_needle
+          value: !lambda return x * 10;
+      - lvgl.arc.update:
+          id: set_temp_arc
+          value: !lambda return x * 10;
+      - lvgl.roller.update:
+          id: set_temp_roller
+          selected_index: !lambda return 2 * (x - 16);  # returns index of roller value
+
+  ### HASS - CURRENT TEMP
+  - platform: homeassistant
+    entity_id: ${climate_entity}
+    id: current_temperature
+    attribute: current_temperature
+    internal: true
+    on_value:
+      - lvgl.arc.update:
+          id: current_temp_arc
+          value: !lambda return x * 10;
+      - lvgl.label.update:
+          id: current_temp_label
+          text:
+            format: "\U000F050F %.1f°C"
+            args: [ 'round(x * 10) / 10' ]
+
+  ### HASS - CURRENT HUMIDITY
+  - platform: homeassistant
+    entity_id: ${climate_entity}
+    id: current_humidity
+    attribute: current_humidity
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: humidity_label
+          text: 
+            format: "\U000F058E %.0f%%"
+            args: [ 'round(x)' ]
+
+text_sensor:
+  ### HASS - HVAC MODE
+  - platform: homeassistant
+    entity_id: ${climate_entity}
+    id: hvac_mode
+    internal: true
+    on_value:
+      - lambda: |-
+          if (x.compare(std::string{"off"}) == 0) {
+            id(set_mode_off).execute();
+          } else if (x.compare(std::string{"heat"}) == 0) {
+            id(set_mode_heat).execute();
+          } else if (x.compare(std::string{"cool"}) == 0) {
+            id(set_mode_cool).execute();
+          } else if (x.compare(std::string{"fan_only"}) == 0) {
+            id(set_mode_fan).execute();
+          } else if (x.compare(std::string{"dry"}) == 0) {
+            id(set_mode_dry).execute();
+          } else if (x.compare(std::string{"heat_cool"}) == 0) {
+            id(set_mode_heat_cool).execute();
+          }
+
+  ### HASS - FAN SPEED
+  - platform: homeassistant
+    entity_id: ${climate_entity}
+    id: fan_mode
+    attribute: fan_mode
+    internal: true
+    on_value:
+      - lambda: |-
+          if (x.compare(std::string{"auto"}) == 0) {
+            // TODO fan overrides
+          } else if (x.compare(std::string{"low"}) == 0) {
+            // TODO fan overrides
+          } else if (x.compare(std::string{"medium"}) == 0) {
+            // TODO fan overrides
+          } else if (x.compare(std::string{"high"}) == 0) {
+            // TODO fan overrides
+          }
+
+  ### HASS - PRESET MODE
+  - platform: homeassistant
+    entity_id: ${climate_entity}
+    id: preset_mode
+    attribute: preset_mode
+    internal: true
+    on_value:
+      lambda: |-
+        if (x.compare(std::string{"none"}) == 0) {
+          id(set_preset_none).execute();
+        } else if (x.compare(std::string{"eco"}) == 0) {
+          id(set_preset_eco).execute();
+        } else if (x.compare(std::string{"boost"}) == 0) {
+          id(set_preset_boost).execute();
+        } else if (x.compare(std::string{"comfort"}) == 0) {
+          id(set_preset_comfort).execute();
+        }
+
+    ### HASS - ZONES
+  - platform: homeassistant
+    entity_id: ${zone_1_entity}
+    id: zone_1
+    internal: true
+    on_value:
+      lambda: |-
+        if (x.compare(std::string{"open"}) == 0) {
+          id(set_zone_1).execute();
+        } else if (x.compare(std::string{"closed"}) == 0) {
+          id(unset_zone_1).execute();
+        }
+  - platform: homeassistant
+    entity_id: ${zone_2_entity}
+    id: zone_2
+    internal: true
+    on_value:
+      lambda: |-
+        if (x.compare(std::string{"open"}) == 0) {
+          id(set_zone_2).execute();
+        } else if (x.compare(std::string{"closed"}) == 0) {
+          id(unset_zone_2).execute();
+        }
+
+  - platform: debug
+    reset_reason:
+      name: Reset Reason
+      disabled_by_default: True
+
+spi:
+  ### DISPLAY
+  clk_pin:
+    number: 47
+    allow_other_uses: true
+  mosi_pin:
+    number: 41
+    allow_other_uses: true
+
+display:
+  - platform: st7701s
+    id: screen
+    spi_mode: MODE0
+    data_rate: 10MHz
+    color_order: RGB
+    auto_clear_enabled: false
+    update_interval: never
+    dimensions:
+      width: 480
+      height: 480
+    cs_pin: 21
+    de_pin: 39
+    vsync_pin: 48
+    hsync_pin: 40
+    pclk_pin:
+      number: 45
+      ignore_strapping_warning: true
+    pclk_frequency: 15MHz
+    pclk_inverted: false
+    hsync_pulse_width: 10
+    hsync_back_porch:  10
+    hsync_front_porch: 10
+    vsync_pulse_width:  2
+    vsync_back_porch:  12
+    vsync_front_porch: 14
+    data_pins:
+      blue:
+        - number: 47                # LCD_D0  = b0
+          allow_other_uses: true
+        - number: 41                # LCD_D1  = b1
+          allow_other_uses: true
+        - 0                         # LCD_D2  = b2
+        - 42                        # LCD_D3  = b3
+        - 14                        # LCD_D4  = b4
+      green:
+        - 8                         # LCD_D5  = g0
+        - 13                        # LCD_D6  = g1
+        - 18                        # LCD_D7  = g2
+        - 12                        # LCD_D8  = g3
+        - 11                        # LCD_D9  = g4
+        - 17                        # LCD_D10 = g5
+      red:
+        - 10                        # LCD_D11 = r0
+        - 16                        # LCD_D12 = r1
+        - 9                         # LCD_D13 = r2
+        - 15                        # LCD_D14 = r3
+        - 46                        # LCD_D15 = r4
+    init_sequence:
+      # Reference: wireless-tag sample code: 
+      # https://github.com/wireless-tag-com/ZX2D10GE01R-V4848/blob/ad21b3659527618fdd752cc0801b0a36f6c5e52c/main/screen.c
+      - [0xFF, 0x77, 0x01, 0x00, 0x00, 0x13]    # CMD2_BKSEL (command bank select BK3, BK func enabled)
+      - [0xEF, 0x08]
+      - [0xFF, 0x77, 0x01, 0x00, 0x00, 0x10]    # CMD2_BKSEL (command bank select BK0, BK func disabled)
+      - [0xC0, 0x3B, 0x00]                      # Scan line
+      - [0xC1, 0x0B, 0x02]                      # VBP
+      - [0xC2, 0x07, 0x02]
+      - [0xCC, 0x10]
+      - [0xCD, 0x08]                            # RGB format | ?565??? 666??
+      - [0xB0, 0x00, 0x11, 0x16, 0x0e, 0x11, 0x06, 0x05, 0x09, 0x08, 0x21, 0x06, 0x13, 0x10, 0x29, 0x31, 0x18]   # IPS | 255 | 251 | 247 down | 239 | 231 | 203 | 175 | 147 | 108 | 80 | 52 | 24 | 16 | 8 down | 4 | 0
+      - [0xB1, 0x00, 0x11, 0x16, 0x0e, 0x11, 0x07, 0x05, 0x09, 0x09, 0x21, 0x05, 0x13, 0x11, 0x2a, 0x31, 0x18]   # IPS | 255 | 251 | 247 down | 239 | 231 | 203 | 175 | 147 | 108 | 80 | 52 | 24 | 16 | 8 down | 4 | 0
+      - [0xFF, 0x77, 0x01, 0x00, 0x00, 0x11]
+      - [0xB0, 0x6d]                            # VOP  3.5375+ *x 0.0125 | 5D
+      - [0xB1, 0x37]                            # VCOM amplitude setting
+      - [0xB2, 0x81]                            # VGH Voltage setting | 12V
+      - [0xB3, 0x80]
+      - [0xB5, 0x43]                            # VGL Voltage setting | -8.3V
+      - [0xB7, 0x85]
+      - [0xB8, 0x20]
+      - [0xC1, 0x78]
+      - [0xC2, 0x78]
+      - [0xD0, 0x88]
+      - [0xE0, 0x00, 0x00, 0x02]
+      - [0xE1, 0x03, 0xA0, 0x00, 0x00, 0x04, 0xA0, 0x00, 0x00, 0x00, 0x20, 0x20]
+      - [0xE2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+      - [0xE3, 0x00, 0x00, 0x11, 0x00]
+      - [0xE4, 0x22, 0x00]
+      - [0xE5, 0x05, 0xEC, 0xA0, 0xA0, 0x07, 0xEE, 0xA0, 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+      - [0xE6, 0x00, 0x00, 0x11, 0x00]
+      - [0xE7, 0x22, 0x00]
+      - [0xE8, 0x06, 0xED, 0xA0, 0xA0, 0x08, 0xEF, 0xA0, 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+      - [0xEB, 0x00, 0x00, 0x40, 0x40, 0x00, 0x00, 0x00]
+      - [0xED, 0xFF, 0xFF, 0xFF, 0xBA, 0x0A, 0xBF, 0x45, 0xFF, 0xFF, 0x54, 0xFB, 0xA0, 0xAB, 0xFF, 0xFF, 0xFF]
+      - [0xEF, 0x10, 0x0D, 0x04, 0x08, 0x3F, 0x1F]
+      - [0xFF, 0x77, 0x01, 0x00, 0x00, 0x13]    # CMD2_BKSEL (command bank select BK3, BK func enabled)
+      - [0xEF, 0x08]
+      - [0xFF, 0x77, 0x01, 0x00, 0x00, 0x00]    # CMD2_BKSEL (command bank select BK0, BK func disabled)
+      - [0x36, 0x00]                            # MADCTL_CMD (already in esphome ST7701S::write_init_sequence_)
+      - [0x3A, 0x66]                            # COLMOD 55/50=16bit(RGB565); 66=18bit(RGB666); 77?????3AH?=24bit(RGB888)
+      # - [0x11]                                  # SLEEP_OUT (already in esphome)
+      # - delay 120ms
+      # - [0x29]                                  # DISPLAY_ON (already in esphome)
+      # - delay 20ms
+
+lvgl:
+  encoders:
+    enter_button: push_button
+    sensor: rotary
+  default_font: roboto_reg
+  text_color: white
+  pages:
+    ### GUI - MAIN THERMOSTAT
+    - id: main_page
+      bg_color: black
+      scrollbar_mode: "OFF"
+      on_load:
+        - globals.set:
+            id: active_lvgl_page
+            value: '"main_page"'
+      on_unload:
+        - globals.set:
+            id: active_lvgl_page
+            value: '""'
+      widgets:
+        - arc:
+            id: set_temp_arc
+            height: 468
+            width: 468
+            align: CENTER
+            min_value: 120    # 12°C (* 10 because decimals not supported)
+            max_value: 340    # 34°C
+            arc_color: graylight
+            arc_opa: 100%
+            arc_width: 2
+            arc_rounded: false
+            value: 100
+            indicator:
+              arc_color: graylight
+              arc_opa: 100%
+              arc_width: 2
+              arc_rounded: false
+        - arc:
+            id: current_temp_arc
+            height: 468
+            width: 468
+            align: CENTER
+            min_value: 120    # 12°C (* 10 because decimals not supported)
+            max_value: 340    # 34°C
+            adjustable: true
+            state:
+              disabled: true
+            arc_color: graylight
+            arc_opa: 100%
+            arc_width: 2
+            arc_rounded: false
+            indicator:
+              arc_color: graylight
+              arc_opa: 100%
+              arc_width: 2
+              arc_rounded: false
+            knob:
+              bg_color: white
+        - meter:
+            id: meter_ticks
+            align: CENTER
+            height: 480
+            width: 480
+            bg_opa: 0%
+            border_width: 0
+            scales:
+              range_from: 120   # 12°C (* 10 because decimals not supported)
+              range_to: 340     # 34°C
+              ticks:
+                count: 89
+                length: 37
+                width: 3
+                color: graylight
+              indicators:
+                - line:
+                    id: set_temp_needle
+                    width: 8
+                    color: white
+                    r_mod: 10
+        - obj:
+            id: mode_bg
+            height: 350
+            width: 350
+            radius: 175
+            align: CENTER
+            border_width: 0
+            bg_color: black
+        - roller:
+            id: set_temp_roller
+            align: CENTER
+            anim_time: 500ms
+            text_font: roboto_med
+            text_opa: 0%
+            bg_opa: 0%
+            border_width: 0
+            text_line_space: 30
+            visible_row_count: 2
+            selected:
+              text_font: roboto_huge
+              text_opa: 100%
+              bg_opa: 0%
+              border_width: 0
+            options:
+              - 16.0
+              - 16.5
+              - 17.0
+              - 17.5
+              - 18.0
+              - 18.5
+              - 19.0 
+              - 19.5
+              - 20.0
+              - 20.5
+              - 21.0
+              - 21.5
+              - 22.0
+              - 22.5
+              - 23.0
+              - 23.5
+              - 24.0
+              - 24.5
+              - 25.0
+              - 25.5
+              - 26.0
+              - 26.5
+              - 27.0
+              - 27.5
+              - 28.0
+              - 28.5
+              - 29.0
+              - 29.5
+              - 30.0
+        - label:
+            id: celsius_label
+            align: CENTER
+            x: 100
+            y: -43
+            text: "°C"
+        - label:
+            id: mode_label
+            align: CENTER
+            y: -100
+            text: "NESP"
+        - label:
+            id: zone_1_label
+            align: CENTER
+            x: -30
+            y: 90
+            text_color: graydarker
+            text_font: roboto_med
+            text: "\U000F0D80"
+        - label:
+            id: zone_2_label
+            align: CENTER
+            x: 30
+            y: 90
+            text_color: graydarker
+            text_font: roboto_med
+            text: "\U000F0D81"
+        - label:
+            id: current_temp_label
+            align: CENTER
+            y: 140
+            text: "\U000F050F"
+        - label:
+            id: humidity_label
+            align: LEFT_MID
+            y: 160
+            hidden: true
+            text: "\U000F058E"
+        - label:
+            id: preset_symb_label
+            align: CENTER
+            y: 210
+            text: " "
+
+    # GUI - MENU PAGE
+    - id: menu_page
+      bg_color: black
+      scrollbar_mode: "OFF"
+      on_load:
+        - globals.set:
+            id: active_lvgl_page
+            value: '"menu_page"'
+      on_unload:
+        - globals.set:
+            id: active_lvgl_page
+            value: '""'
+      widgets:
+        # TODO
+        # SAT 14:44 (gray)
+        # PIC 12C (white)
+        #
+        # Z1 12C 43%H (gray)
+        # Z2 12C 12%H (white)
+        - label:
+            id: menu_label
+            align: CENTER
+            x: 50
+            text_font: roboto_med
+            text: "Back"
+        - button:
+            id: menu_back_button
+            align: CENTER
+            bg_opa: 0%
+            shadow_opa: 0%
+            x: 0
+            y: -205
+            height: 50
+            width: 50
+            widgets:
+              - label:
+                  align: CENTER
+                  text_font: roboto_med
+                  text: "\U000F004D"
+            on_press:
+              - lvgl.page.show:
+                  id: main_page
+                  animation: FADE_OUT
+                  time: 500ms
+        - button:
+            id: menu_power_button
+            align: CENTER
+            bg_opa: 0%
+            shadow_opa: 0%
+            x: 105    # 205sin(30) clock radius
+            y: -178   # 205cos(30)
+            height: 50
+            width: 50
+            widgets:
+              - label:
+                  align: CENTER
+                  text_font: roboto_med
+                  text: "\U000F0425"
+        - button:
+            id: menu_mode_button
+            align: CENTER
+            bg_opa: 0%
+            shadow_opa: 0%
+            x: 178
+            y: -105
+            height: 50
+            width: 50
+            widgets:
+              - label:
+                  align: CENTER
+                  text_font: roboto_med
+                  text: "\U000F0238"
+        - button:
+            id: menu_preset_button
+            align: CENTER
+            bg_opa: 0%
+            shadow_opa: 0%
+            x: 205
+            y: 0
+            height: 50
+            width: 50
+            widgets:
+              - label:
+                  align: CENTER
+                  text_font: roboto_med
+                  text: "\U000F050F"
+        - button:
+            id: menu_zone1_button
+            align: CENTER
+            checkable: true
+            bg_opa: 0%
+            shadow_opa: 0%
+            x: 178
+            y: 105
+            height: 50
+            width: 50
+            widgets:
+              - label:
+                  align: CENTER
+                  text_font: roboto_med
+                  text: "\U000F0D80"
+        - button:
+            id: menu_zone2_button
+            align: CENTER
+            checkable: true
+            bg_opa: 0%
+            shadow_opa: 0%
+            x: 105
+            y: 178
+            height: 50
+            width: 50
+            widgets:
+              - label:
+                  align: CENTER
+                  text_font: roboto_med
+                  text: "\U000F0D81"
+
+globals:
+  - id: active_lvgl_page
+    type: std::string
+
+script:
+  - id: vibrate
+    parameters:
+      length_ms: int
+    then:
+      # XXX doesn't delay properly for short lengths (10-100ms)
+      - switch.turn_on: vibration
+      - delay: !lambda return length_ms;
+      - switch.turn_off: vibration
+
+  - id: show_widgets
+    then:
+      - lvgl.widget.show:
+        - set_temp_roller
+        - celsius_label
+        - preset_symb_label
+      - lvgl.indicator.update:
+          id: set_temp_needle
+          opa: 100%
+  - id: hide_widgets
+    then:
+      - lvgl.widget.hide:
+        - set_temp_roller
+        - celsius_label
+        - preset_symb_label
+      - lvgl.indicator.update:
+          id: set_temp_needle
+          opa: 0%
+
+  # hvac mode UI scripts
+  - id: set_mode_off
+    then:
+      #- script.execute: hide_widgets
+      - lvgl.label.update:
+          id: mode_label
+          text: "OFF"
+      - lvgl.widget.update:
+          id: mode_bg
+          bg_color: black
+      - light.turn_off: rgb_ring
+  - id: set_mode_heat
+    then:
+      - script.execute: show_widgets
+      - lvgl.label.update:
+          id: mode_label
+          text: "HEAT TO"
+      - lvgl.widget.update:
+          id: mode_bg
+          bg_color: mode_heat
+      - light.turn_on:
+          id: rgb_ring
+          brightness: 100%
+          red:   1.000
+          green: 0.533
+          blue:  0.118
+  - id: set_mode_cool
+    then:
+      - script.execute: show_widgets
+      - lvgl.label.update:
+          id: mode_label
+          text: "COOL TO"
+      - lvgl.widget.update:
+          id: mode_bg
+          bg_color: mode_cool
+      - light.turn_on:
+          id: rgb_ring
+          brightness: 100%
+          red:   0.498
+          green: 0.675
+          blue:  1.000
+  - id: set_mode_fan
+    then:
+      - script.execute: show_widgets
+      - lvgl.label.update:
+          id: mode_label
+          text: "FAN ON"
+      - lvgl.widget.update:
+          id: mode_bg
+          bg_color: mode_fan
+      - light.turn_on:
+          id: rgb_ring
+          brightness: 100%
+          red:   0.749
+          green: 0.980
+          blue:  1.000
+  - id: set_mode_dry
+    then:
+      - script.execute: show_widgets
+      - lvgl.label.update:
+          id: mode_label
+          text: "DEHUMIDIFY ON"
+      - lvgl.widget.update:
+          id: mode_bg
+          bg_color: mode_dry
+      - light.turn_on:
+          id: rgb_ring
+          brightness: 100%
+          red:   1.000
+          green: 0.753
+          blue:  0.549
+  - id: set_mode_heat_cool
+    then:
+      - script.execute: show_widgets
+      - lvgl.label.update:
+          id: mode_label
+          text: "AUTO TO"
+      - lvgl.widget.update:
+          id: mode_bg
+          bg_color: mode_heat_cool
+      - light.turn_on:
+          id: rgb_ring
+          brightness: 100%
+          red:   0.843
+          green: 0.588
+          blue:  1.000
+
+  # preset mode UI scripts
+  - id: set_preset_none
+    then:
+      - lvgl.label.update:
+          id: preset_symb_label
+          text: " "
+  - id: set_preset_eco
+    then:
+      - lvgl.label.update:
+          id: preset_symb_label
+          text_color: green
+          text: "\U000F032A"
+  - id: set_preset_boost
+    then:
+      - lvgl.label.update:
+          id: preset_symb_label
+          text_color: amber
+          text: "\U000F14DE"
+  - id: set_preset_comfort
+    then:
+      - lvgl.label.update:
+          id: preset_symb_label
+          text_color: amber
+          text: "\U000F04B9"
+
+  # zone UI scripts
+  - id: set_zone_1
+    then:
+      - lvgl.label.update:
+          id: zone_1_label
+          text_color: white
+  - id: unset_zone_1
+    then:
+      - lvgl.label.update:
+          id: zone_1_label
+          text_color: graydark
+  - id: set_zone_2
+    then:
+      - lvgl.label.update:
+          id: zone_2_label
+          text_color: white
+  - id: unset_zone_2
+    then:
+      - lvgl.label.update:
+          id: zone_2_label
+          text_color: graydark
