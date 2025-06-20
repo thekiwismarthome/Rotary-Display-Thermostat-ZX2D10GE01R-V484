@@ -1,61 +1,42 @@
 substitutions:
   friendly_name: 'NESP'
-  hostname: 'neo-nesp'
+  name: 'neo-nesp'
   device_name: 'neo_nesp'
-  board: 'esp32-s3-devkitc-1'
-  node_name: 'nesp'
-  device_description: 'Rotary Display thermostat on ZX2D10GE01R-V4848 with WT32-S3-WROVER-N16R8 with ST7701S display'
-  project_base: 'Veli'
-  project_name: 'Knob'
-  project_version: '0.2'
-
+  device_description: 'WT32S3-21S ZX2D10GE01R-V4848 rotary switch screen'
   static_ip: 192.168.0.124
 
   # Home Assistant entities you want to control with nESP
-  light_entity_lounge: light.lounge_dimmer_2
-  light_control: light.lounge_dimmer_2
-  zone_1_entity: light.lounge_dimmer_2
-  zone_2_entity: cover.zone_2_upstairs
-
-
-  # Home Assistant weather/info entities
-  weather_entity: weather.home_2
-  weather_feels_like_entity: sensor.home_temperature_feels_like
-  weather_high_entity: sensor.bom_melbourne_temp_max_0
-  weather_low_entity: sensor.bom_melbourne_temp_min_0
-  weather_rain_chance_entity: sensor.bom_melbourne_rain_chance_0
-  zone_1_temperature_entity: sensor.lumi_lumi_weather_temperature   # Kitchen
-  zone_1_humidity_entity: sensor.lumi_lumi_weather_humidity   # Kitchen
-  zone_2_temperature_entity: sensor.xiaomi_temp_2_temperature
-  zone_2_humidity_entity: sensor.xiaomi_temp_2_humidity
-
-  ## HA Entities
   climate_entity: climate.ac_living_room
   min_value: "15"
   max_value: "35"
   initial_value: "21"
+  zone_1_entity: cover.zone_1_downstairs
+  zone_2_entity: cover.zone_2_upstairs
 
-  # for QR code generating
-  ap_ssid: ${device_name}
-  ap_password: ${device_name}
-  ap_guest_ssid: !secret ap_guest_ssid
-  ap_guest_password: !secret ap_guest_password
+  # Home Assistant weather/info entities
+  weather_entity: weather.home_2
+  weather_temperature_entity: sensor.home_temperature
+  weather_feels_like_entity: sensor.bom_melbourne_temp_feels_like
+  weather_high_entity: sensor.bom_melbourne_temp_max_0
+  weather_low_entity: sensor.bom_melbourne_temp_min_0
+  weather_rain_chance_entity: sensor.bom_melbourne_rain_chance_0
+  zone_1_temperature_entity: sensor.kitchen_t_h_temperature   # Kitchen/Inside
+  zone_1_humidity_entity: sensor.kitchen_t_h_humidity   # Kitchen/Inside
+  zone_2_temperature_entity: sensor.xiaomi_temp_2_temperature # NOT SURE WHAT TO USE THIS FOR YET
+  zone_2_humidity_entity: sensor.xiaomi_temp_2_humidity # NOT SURE WHAT TO USE THIS FOR YET
 
-<<: !include common.yaml
-
-
-external_components:
-  - source: github://pr#7472
-    components: [ lvgl ]
-  - source:
-      type: git
-      url: https://github.com/esphome/esphome
-      ref: dev
-    components: [ st7701s ]
+# external_components:
+#   - source: github://pr#7472
+#     components: [ lvgl ]
+#   - source:
+#       type: git
+#       url: https://github.com/esphome/esphome
+#       ref: dev
+#     components: [ st7701s ]
 
 esphome:
-  name: ${hostname}
-  name_add_mac_suffix: true
+  name: ${name}
+  name_add_mac_suffix: false
   friendly_name: ${friendly_name}
   comment: ${device_description}
   platformio_options:
@@ -70,8 +51,8 @@ esp32:
   flash_size: 16MB
   framework:
     type: esp-idf
-    version: 5.3.1
-    platform_version: 6.8.1
+    # version: 5.3.1
+    # platform_version: 6.8.1
     sdkconfig_options:
       CONFIG_ESPTOOLPY_FLASHSIZE_16MB: y
       CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: y
@@ -84,6 +65,11 @@ psram:
 
 debug:
   update_interval: 60s
+
+<<: !include common.yaml
+
+packages:
+  colors: !include nesp/colors/homeassistant
 
 output:
   ### DISPLAY BACKLIGHT
@@ -107,7 +93,7 @@ light:
     id: rgb_ring
     pin: 4
     num_leds: 13
-    rmt_channel: 0
+    # rmt_channel: 0
     rgb_order: GRB
     chipset: WS2812
 
@@ -280,7 +266,7 @@ sensor:
             return id(set_temperature).state < id(current_temperature).state ? id(current_temperature).state * 10 : id(set_temperature).state * 10;
       - lvgl.roller.update:
           id: set_temp_roller
-          selected_index: !lambda return 2 * (x - 16);  # returns index of roller value
+          selected_index: !lambda return 2 * (x - 16);  ## returns index of roller value
 
   ### HASS - HVAC CURRENT TEMP
   - platform: homeassistant
@@ -411,11 +397,9 @@ text_sensor:
             id(set_mode_heat).execute();
           } else if (x.compare("cool") == 0) {
             id(set_mode_cool).execute();
-          } else if (x.compare("fan_only") == 0) {
-            id(set_mode_fan).execute();
           } else if (x.compare("dry") == 0) {
             id(set_mode_dry).execute();
-          } else if (x.compare("heat_cool") == 0) {
+          } else if (x.compare("auto") == 0) {
             id(set_mode_heat_cool).execute();
           }
 
@@ -429,12 +413,16 @@ text_sensor:
       - lambda: |-
           if (x.compare("auto") == 0) {
             id(set_fan_auto).execute();
+          } else if (x.compare("quiet") == 0) {
+            id(set_fan_quiet).execute();
           } else if (x.compare("low") == 0) {
             id(set_fan_low).execute();
           } else if (x.compare("medium") == 0) {
             id(set_fan_medium).execute();
           } else if (x.compare("high") == 0) {
             id(set_fan_high).execute();
+          } else if (x.compare("super high") == 0) {
+            id(set_fan_super_high).execute();
           }
 
   ### HASS - HVAC PRESET
