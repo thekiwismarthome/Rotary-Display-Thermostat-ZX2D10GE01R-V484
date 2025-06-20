@@ -21,10 +21,15 @@ font:
           "\U000F0717", # mdi:snowflake
           "\U000F1A79", # mdi:sun-snowflake-variant
           "\U000F0210", # mdi:fan
+          "\U000F146D", # mdi:fan-chevron-down
+          "\U000F146E", # mdi:fan-chevron-up
           "\U000F171D", # mdi:fan-auto
           "\U000F1472", # mdi:fan-speed-1
+          "\U000F0F86", # mdi:speedometer-slow
           "\U000F1473", # mdi:fan-speed-2
+          "\U000F04C5", # mdi:speedometer
           "\U000F1474", # mdi:fan-speed-3
+          "\U000F146F", # mdi:fan-plus
           "\U000F032A", # mdi:leaf
           "\U000F04B9", # mdi:sofa
           "\U000F14DE", # mdi:rocket-launch
@@ -69,11 +74,16 @@ font:
           "\U000F1A45", # mdi:heat-wave
           "\U000F0717", # mdi:snowflake
           "\U000F1A79", # mdi:sun-snowflake-variant
+          "\U000F146D", # mdi:fan-chevron-down
+          "\U000F146E", # mdi:fan-chevron-up
           "\U000F0210", # mdi:fan
           "\U000F171D", # mdi:fan-auto
           "\U000F1472", # mdi:fan-speed-1
+          "\U000F0F86", # mdi:speedometer-slow
           "\U000F1473", # mdi:fan-speed-2
+          "\U000F04C5", # mdi:speedometer
           "\U000F1474", # mdi:fan-speed-3
+          "\U000F146F", # mdi:fan-plus
           "\U000F032A", # mdi:leaf
           "\U000F04B9", # mdi:sofa
           "\U000F14DE", # mdi:rocket-launch
@@ -112,9 +122,14 @@ font:
       - file: "fonts/materialdesignicons-webfont.ttf"
         glyphs: [
           "\U000F171D", # mdi:fan-auto
+          "\U000F146D", # mdi:fan-chevron-down
+          "\U000F146E", # mdi:fan-chevron-up
           "\U000F1472", # mdi:fan-speed-1
+          "\U000F0F86", # mdi:speedometer-slow
           "\U000F1473", # mdi:fan-speed-2
+          "\U000F04C5", # mdi:speedometer
           "\U000F1474", # mdi:fan-speed-3
+          "\U000F146F", # mdi:fan-plus
           "\U000F0594", # mdi:weather-night (clear)
           "\U000F0590", # mdi:weather-cloudy (cloudy)
           "\U000F0898", # mdi:weather-hurricane (cyclone, tropical_cyclone)
@@ -875,17 +890,21 @@ lvgl:
         - lvgl.widget.enable:
             - fan_back_button
             - fan_auto_button
+            - fan_super_high_button
             - fan_high_button
             - fan_medium_button
             - fan_low_button
+            - fan_quiet_button
         - lvgl.widget.focus: fan_auto_button
       on_unload:
         - lvgl.widget.disable:
             - fan_back_button
             - fan_auto_button
+            - fan_super_high_button
             - fan_high_button
             - fan_medium_button
             - fan_low_button
+            - fan_quiet_button
       widgets:
         - label:
             id: selected_fan_label
@@ -897,8 +916,8 @@ lvgl:
             id: fan_back_button
             state:
               disabled: true
-            x: 182
-            y: -105
+            x: 0
+            y: -210
             styles: style_menu_button
             widgets:
               - label:
@@ -914,8 +933,8 @@ lvgl:
             id: fan_auto_button
             state:
               disabled: true
-            x: 210
-            y: 0
+            x: 105
+            y: -182
             styles: style_menu_button
             widgets:
               - label:
@@ -933,16 +952,38 @@ lvgl:
                     fan_mode: "auto"
               - script.execute: goto_main_page
         - button:
-            id: fan_high_button
+            id: fan_super_high_button
             state:
               disabled: true
             x: 182
-            y: 105
+            y: -105
             styles: style_menu_button
             widgets:
               - label:
                   styles: style_menu_button_label
                   text: "\U000F1474"
+            on_focus:
+              - lvgl.label.update:
+                  id: selected_fan_label
+                  text: "Super High"
+            on_press:
+              - homeassistant.action:
+                  action: climate.set_fan_mode
+                  data:
+                    entity_id: ${climate_entity}
+                    fan_mode: "super high"
+              - script.execute: goto_main_page
+        - button:
+            id: fan_high_button
+            state:
+              disabled: true
+            x: 210
+            y: 0
+            styles: style_menu_button
+            widgets:
+              - label:
+                  styles: style_menu_button_label
+                  text: "\U000F04C5"
             on_focus:
               - lvgl.label.update:
                   id: selected_fan_label
@@ -958,8 +999,8 @@ lvgl:
             id: fan_medium_button
             state:
               disabled: true
-            x: 105
-            y: 182
+            x: 182
+            y: 105
             styles: style_menu_button
             widgets:
               - label:
@@ -974,10 +1015,32 @@ lvgl:
                   action: climate.set_fan_mode
                   data:
                     entity_id: ${climate_entity}
-                    fan_mode: "medium"
+                    fan_mode: "med"
               - script.execute: goto_main_page
         - button:
             id: fan_low_button
+            state:
+              disabled: true
+            x: 105
+            y: 182
+            styles: style_menu_button
+            widgets:
+              - label:
+                  styles: style_menu_button_label
+                  text: "\U000F0F86"
+            on_focus:
+              - lvgl.label.update:
+                  id: selected_fan_label
+                  text: "Low"
+            on_press:
+              - homeassistant.action:
+                  action: climate.set_fan_mode
+                  data:
+                    entity_id: ${climate_entity}
+                    fan_mode: "low"
+              - script.execute: goto_main_page
+        - button:
+            id: fan_quiet_button
             state:
               disabled: true
             x: 0
@@ -990,13 +1053,13 @@ lvgl:
             on_focus:
               - lvgl.label.update:
                   id: selected_fan_label
-                  text: "Low"
+                  text: "Quiet"
             on_press:
               - homeassistant.action:
                   action: climate.set_fan_mode
                   data:
                     entity_id: ${climate_entity}
-                    fan_mode: "low"
+                    fan_mode: "quiet"
               - script.execute: goto_main_page
 
 script:
@@ -1366,6 +1429,17 @@ script:
       - lvgl.label.update:
           id: menu_fan_button_label
           text: "\U000F171D"
+  - id: set_fan_quiet
+    then:
+      - lvgl.label.update:
+          id: big_fan_icon_label
+          text: "\U000F146D"
+      - lvgl.label.update:
+          id: fan_icon_label
+          text: "\U000F146D"
+      - lvgl.label.update:
+          id: menu_fan_button_label
+          text: "\U000F146D"
   - id: set_fan_low
     then:
       - lvgl.label.update:
@@ -1399,6 +1473,17 @@ script:
       - lvgl.label.update:
           id: menu_fan_button_label
           text: "\U000F1474"
+  - id: set_fan_super_high
+    then:
+      - lvgl.label.update:
+          id: big_fan_icon_label
+          text: "\U000F146F"
+      - lvgl.label.update:
+          id: fan_icon_label
+          text: "\U000F146F"
+      - lvgl.label.update:
+          id: menu_fan_button_label
+          text: "\U000F146F"
 
   # zone UI scripts
   - id: set_zone_1
